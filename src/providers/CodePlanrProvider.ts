@@ -46,10 +46,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             return;
         }
 
-        // Add user message
-        this._addMessage('user', text);
-
-        // Show typing indicator
+        // Show typing indicator immediately
         this._showTyping();
 
         try {
@@ -57,7 +54,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             const apiKey = await this._getApiKey();
             if (!apiKey) {
                 this._hideTyping();
-                this._addMessage('assistant', '⚠️ OpenAI API key not configured. Please set it up first:\n\n- Set environment variable `OPENAI_API_KEY`\n- Or run "CodePlanr: Configure OpenAI API Key" command\n- Then reload the window');
+                this._addMessage('assistant', '⚠️ OpenAI API key not configured. Please set it up first:\n\n- Set environment variable OPENAI_API_KEY\n- Or run "CodePlanr: Configure OpenAI API Key" command\n- Then reload the window');
                 return;
             }
 
@@ -72,6 +69,10 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             
             if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
                 this._addMessage('assistant', '🔑 API Key Error: Your OpenAI API key is invalid or missing.\n\nPlease:\n1. Get a valid API key from https://platform.openai.com/api-keys\n2. Set it via "CodePlanr: Configure OpenAI API Key" command\n3. Reload the window');
+            } else if (errorMessage.includes('429')) {
+                this._addMessage('assistant', '⏰ Rate Limit Error: You have exceeded the API rate limit. Please wait a moment and try again.');
+            } else if (errorMessage.includes('500') || errorMessage.includes('502') || errorMessage.includes('503')) {
+                this._addMessage('assistant', '🌐 Server Error: OpenAI servers are experiencing issues. Please try again in a few minutes.');
             } else {
                 this._addMessage('assistant', `❌ Error: ${errorMessage}`);
             }
@@ -137,7 +138,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                 messages: [
                     {
                         role: 'system',
-                        content: 'You are CodePlanr AI, a helpful coding assistant. Help users with their coding tasks, provide step-by-step plans, and suggest code implementations. Be concise and practical.'
+                        content: 'You are CodePlanr AI, a helpful coding assistant. Help users with their coding tasks, provide step-by-step plans, and suggest code implementations. Be concise and practical. Always respond in plain text without markdown formatting, bullet points, or special characters. Just provide clear, readable text.'
                     },
                     {
                         role: 'user',
@@ -150,11 +151,27 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         });
 
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('OpenAI API error:', response.status, errorText);
             throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json() as any;
-        return data.choices[0].message.content;
+        let content = data.choices[0].message.content;
+        
+        // Clean up the response - remove markdown formatting
+        content = content
+            .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold formatting
+            .replace(/\*(.*?)\*/g, '$1') // Remove italic formatting
+            .replace(/^[\s]*[-*]\s*/gm, '• ') // Convert list items to bullet points
+            .replace(/^[\s]*\d+\.\s*/gm, '') // Remove numbered lists
+            .replace(/```[\s\S]*?```/g, '') // Remove code blocks
+            .replace(/`([^`]+)`/g, '$1') // Remove inline code formatting
+            .replace(/#{1,6}\s*/g, '') // Remove headers
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links, keep text
+            .trim();
+            
+        return content;
     }
 
     private _addMessage(type: 'user' | 'assistant', content: string) {
@@ -459,11 +476,13 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             const text = messageInput.value.trim();
             if (!text || isProcessing) return;
 
-            // Add user message
-            addMessage('user', text);
+            // Clear input and disable button immediately
             messageInput.value = '';
             sendBtn.disabled = true;
             isProcessing = true;
+
+            // Add user message to chat
+            addMessage('user', text);
 
             // Send to extension
             vscode.postMessage({
@@ -535,6 +554,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                     addMessage(message.message.type, message.message.content);
                     isProcessing = false;
                     sendBtn.disabled = false;
+                    messageInput.focus();
                     break;
                     
                 case 'showTyping':

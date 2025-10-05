@@ -13,30 +13,11 @@
   ],
   "activationEvents": [
     "onView:codePlanrChat",
-    "onCommand:CodePlanr.openChat",
-    "onCommand:CodePlanr.generatePlan",
-    "onCommand:CodePlanr.applyChanges",
-    "onCommand:CodePlanr.configureApiKey",
-    "onStartupFinished"
+    "onCommand:CodePlanr.configureApiKey"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "CodePlanr.openChat",
-        "title": "Open CodePlanr Chat",
-        "category": "CodePlanr"
-      },
-      {
-        "command": "CodePlanr.generatePlan",
-        "title": "Generate AI Coding Plan",
-        "category": "CodePlanr"
-      },
-      {
-        "command": "CodePlanr.applyChanges",
-        "title": "Apply AI Suggested Changes",
-        "category": "CodePlanr"
-      },
       {
         "command": "CodePlanr.configureApiKey",
         "title": "Configure OpenAI API Key",

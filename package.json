@@ -1,0 +1,92 @@
+{
+  "name": "codeplanr",
+  "displayName": "CodePlanr",
+  "description": "CodePlanr AI is a VS Code extension that creates AI-powered coding plans. It scans your workspace offline for relevant files, generates a Markdown plan with clickable links, and lets you apply AI-suggested code changes to files with confirmation. Simple, TypeScript-based, and built to streamline coding tasks.",
+  "version": "0.0.1",
+  "publisher": "ParasRaut",
+  "engines": {
+    "vscode": "^1.104.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "CodePlanr.openChat",
+        "title": "Open CodePlanr Chat",
+        "category": "CodePlanr"
+      },
+      {
+        "command": "CodePlanr.generatePlan",
+        "title": "Generate AI Coding Plan",
+        "category": "CodePlanr"
+      },
+      {
+        "command": "CodePlanr.applyChanges",
+        "title": "Apply AI Suggested Changes",
+        "category": "CodePlanr"
+      },
+      {
+        "command": "CodePlanr.configureApiKey",
+        "title": "Configure OpenAI API Key",
+        "category": "CodePlanr"
+      }
+    ],
+    "configuration": {
+      "title": "CodePlanr",
+      "properties": {
+        "CodePlanr.openaiApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "OpenAI API Key (get one from https://platform.openai.com/api-keys). You can also set OPENAI_API_KEY environment variable."
+        },
+        "CodePlanr.model": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "OpenAI model to use for code generation"
+        },
+        "CodePlanr.autoAnalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically analyze workspace files when chat opens"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "yarn run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "yarn run compile-tests && yarn run compile && yarn run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "fs-extra": "^11.2.0",
+    "glob": "^11.0.0",
+    "openai": "^4.67.0"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.104.0",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.45.0",
+    "@vscode/test-cli": "^0.0.11",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.36.0",
+    "ts-loader": "^9.5.4",
+    "typescript": "^5.9.3",
+    "webpack": "^5.102.0",
+    "webpack-cli": "^6.0.1"
+  }
+}

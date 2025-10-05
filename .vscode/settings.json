@@ -1,0 +1,21 @@
+{
+    "typescript.preferences.includePackageJsonAutoImports": "auto",
+    "typescript.suggest.autoImports": true,
+    "typescript.updateImportsOnFileMove.enabled": "always",
+    "files.exclude": {
+        "**/node_modules": true,
+        "**/out": true,
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/out": true,
+        "**/.git": true
+    },
+    "files.watcherExclude": {
+        "**/node_modules/**": true,
+        "**/out/**": true
+    }
+}

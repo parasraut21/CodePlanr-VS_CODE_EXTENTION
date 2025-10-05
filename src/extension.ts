@@ -1,8 +1,17 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { SidebarWebviewProvider } from './providers/sidebarWebviewProvider';
 
 export function activate(context: vscode.ExtensionContext) {
 	console.log('CodePlanr extension is now active!');
+
+    // Create sidebar webview provider
+    const sidebarProvider = new SidebarWebviewProvider(context.extensionUri);
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(SidebarWebviewProvider.viewType, sidebarProvider, {
+            webviewOptions: { retainContextWhenHidden: true }
+        })
+    );
 
 	// Register the command to open the chat panel
 	const openChatCommand = vscode.commands.registerCommand('CodePlanr.openChat', () => {
@@ -30,11 +39,7 @@ export function activate(context: vscode.ExtensionContext) {
 		configureApiKeyCommand
 	);
 
-	// Auto-open chat interface for testing
-	setTimeout(() => {
-		console.log('Auto-opening chat interface...');
-		ChatPanel.createOrShow(context.extensionUri);
-	}, 1000);
+	// Note: Sidebar will be available in the Activity Bar
 }
 
 export function deactivate() {

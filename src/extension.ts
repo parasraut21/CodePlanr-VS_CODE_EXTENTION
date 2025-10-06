@@ -3,7 +3,7 @@ import { CodePlanrProvider } from './providers/CodePlanrProvider';
 import { MastraAgentProvider } from './providers/MastraAgentProvider';
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('CodePlanr is now active!');
+   
 
     // Create the chat webview provider
     const chatProvider = new CodePlanrProvider(context.extensionUri);

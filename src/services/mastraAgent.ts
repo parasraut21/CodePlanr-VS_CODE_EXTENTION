@@ -20,6 +20,7 @@ interface TaskPlan {
 export class MastraAgentService {
     private currentPlan: TaskPlan | null = null;
     private apiKey: string = '';
+    private model: string = 'gpt-4o';
 
     constructor() {}
 
@@ -27,18 +28,36 @@ export class MastraAgentService {
         this.apiKey = key;
     }
 
+    setModel(model: string) {
+        this.model = model;
+    }
+
     async createPlan(userRequest: string): Promise<TaskPlan> {
-        const planningPrompt = `Break down this task into clear steps: "${userRequest}"
+        // First, validate if this is a coding task
+        const validationPrompt = `Is this a request to create, modify, or work with code/files? Answer ONLY "yes" or "no".
+
+Request: "${userRequest}"
+
+Answer:`;
+
+        const validationResponse = await this.callOpenAI(validationPrompt);
+        const isValidTask = validationResponse.toLowerCase().trim().includes('yes');
+
+        if (!isValidTask) {
+            throw new Error('NOT_A_CODING_TASK');
+        }
+
+        const planningPrompt = `Break down this coding task into clear, specific steps: "${userRequest}"
         
         Return ONLY a JSON array of steps, each with:
-        - description: what to do
+        - description: what to do (be specific)
         - action: one of [create_file, write_code, check_errors, modify_file]
         - file: filename if applicable
         
         Example for "create a cpp file for addition of 2 numbers":
         [
             {"description": "Create addition.cpp file", "action": "create_file", "file": "addition.cpp"},
-            {"description": "Write C++ code for addition", "action": "write_code", "file": "addition.cpp"},
+            {"description": "Write C++ code for addition of two numbers", "action": "write_code", "file": "addition.cpp"},
             {"description": "Check for compilation errors", "action": "check_errors", "file": "addition.cpp"}
         ]
         
@@ -75,7 +94,7 @@ export class MastraAgentService {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'gpt-4o',
+                model: this.model,
                 messages: [
                     {
                         role: 'system',

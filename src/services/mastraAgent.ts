@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { callOpenAI } from '../utils/openai';
 
-interface TaskStep {
+export interface TaskStep {
     id: number;
     description: string;
     status: 'pending' | 'in-progress' | 'completed' | 'failed';
@@ -12,7 +13,7 @@ interface TaskStep {
     file?: string;
 }
 
-interface TaskPlan {
+export interface TaskPlan {
     task: string;
     steps: TaskStep[];
 }
@@ -22,106 +23,33 @@ export class MastraAgentService {
     private apiKey: string = '';
     private model: string = 'gpt-4o';
 
-    constructor() {}
-
-    setApiKey(key: string) {
+    setApiKey(key: string): void {
         this.apiKey = key;
     }
 
-    setModel(model: string) {
+    setModel(model: string): void {
         this.model = model;
     }
 
     async createPlan(userRequest: string): Promise<TaskPlan> {
-        // First, validate if this is a coding task
-        const validationPrompt = `Is this a request to create, modify, or work with code/files? Answer ONLY "yes" or "no".
-
-Request: "${userRequest}"
-
-Answer:`;
-
-        const validationResponse = await this.callOpenAI(validationPrompt);
-        const isValidTask = validationResponse.toLowerCase().trim().includes('yes');
-
-        if (!isValidTask) {
-            throw new Error('NOT_A_CODING_TASK');
-        }
-
-        const planningPrompt = `Break down this coding task into clear, specific steps: "${userRequest}"
+        await this.validateCodingTask(userRequest);
         
-        Return ONLY a JSON array of steps, each with:
-        - description: what to do (be specific)
-        - action: one of [create_file, write_code, check_errors, modify_file]
-        - file: filename if applicable
+        const planningPrompt = this.buildPlanningPrompt(userRequest);
+        const response = await callOpenAI(
+            this.apiKey,
+            this.model,
+            planningPrompt,
+            'You are a helpful coding assistant. Always return valid JSON when requested.'
+        );
         
-        Example for "create a cpp file for addition of 2 numbers":
-        [
-            {"description": "Create addition.cpp file", "action": "create_file", "file": "addition.cpp"},
-            {"description": "Write C++ code for addition of two numbers", "action": "write_code", "file": "addition.cpp"},
-            {"description": "Check for compilation errors", "action": "check_errors", "file": "addition.cpp"}
-        ]
-        
-        Return ONLY the JSON array, no other text.`;
+        const stepsData = this.extractJsonFromResponse(response);
+        const steps = this.mapStepsData(stepsData);
 
-        try {
-            const response = await this.callOpenAI(planningPrompt);
-            const stepsData = this.extractJsonFromResponse(response);
-            
-            const steps: TaskStep[] = stepsData.map((step: any, index: number) => ({
-                id: index + 1,
-                description: step.description,
-                status: 'pending' as const,
-                action: step.action,
-                file: step.file
-            }));
-
-            this.currentPlan = {
-                task: userRequest,
-                steps
-            };
-
-            return this.currentPlan;
-        } catch (error) {
-            throw new Error(`Failed to create plan: ${error}`);
-        }
+        this.currentPlan = { task: userRequest, steps };
+        return this.currentPlan;
     }
 
-    private async callOpenAI(prompt: string): Promise<string> {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${this.apiKey}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                model: this.model,
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a helpful coding assistant. Always return valid JSON when requested.'
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                max_tokens: 2000,
-                temperature: 0.7
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`OpenAI API error: ${response.status}`);
-        }
-
-        const data = await response.json() as any;
-        return data.choices[0].message.content;
-    }
-
-    async executePlan(
-        plan: TaskPlan,
-        onProgress: (step: TaskStep) => void
-    ): Promise<void> {
+    async executePlan(plan: TaskPlan, onProgress: (step: TaskStep) => void): Promise<void> {
         for (const step of plan.steps) {
             step.status = 'in-progress';
             onProgress(step);
@@ -140,7 +68,48 @@ Answer:`;
         }
     }
 
-    private async executeStep(step: any): Promise<string> {
+    getCurrentPlan(): TaskPlan | null {
+        return this.currentPlan;
+    }
+
+    private async validateCodingTask(userRequest: string): Promise<void> {
+        const validationPrompt = `Is this a request to create, modify, or work with code/files? Answer ONLY "yes" or "no".\n\nRequest: "${userRequest}"\n\nAnswer:`;
+        const response = await callOpenAI(this.apiKey, this.model, validationPrompt);
+        
+        if (!response.toLowerCase().trim().includes('yes')) {
+            throw new Error('NOT_A_CODING_TASK');
+        }
+    }
+
+    private buildPlanningPrompt(userRequest: string): string {
+        return `Break down this coding task into clear, specific steps: "${userRequest}"
+        
+        Return ONLY a JSON array of steps, each with:
+        - description: what to do (be specific)
+        - action: one of [create_file, write_code, check_errors, modify_file]
+        - file: filename if applicable
+        
+        Example for "create a cpp file for addition of 2 numbers":
+        [
+            {"description": "Create addition.cpp file", "action": "create_file", "file": "addition.cpp"},
+            {"description": "Write C++ code for addition of two numbers", "action": "write_code", "file": "addition.cpp"},
+            {"description": "Check for compilation errors", "action": "check_errors", "file": "addition.cpp"}
+        ]
+        
+        Return ONLY the JSON array, no other text.`;
+    }
+
+    private mapStepsData(stepsData: any[]): TaskStep[] {
+        return stepsData.map((step: any, index: number) => ({
+            id: index + 1,
+            description: step.description,
+            status: 'pending' as const,
+            action: step.action,
+            file: step.file
+        }));
+    }
+
+    private async executeStep(step: TaskStep): Promise<string> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             throw new Error('No workspace folder open');
@@ -150,17 +119,13 @@ Answer:`;
         
         switch (action) {
             case 'create_file':
-                return await this.createFile(step.file, workspaceFolder);
-            
+                return await this.createFile(step.file!, workspaceFolder);
             case 'write_code':
-                return await this.writeCode(step.file, step.description, workspaceFolder);
-            
+                return await this.writeCode(step.file!, step.description, workspaceFolder);
             case 'check_errors':
-                return await this.checkErrors(step.file, workspaceFolder);
-            
+                return await this.checkErrors(step.file!, workspaceFolder);
             case 'modify_file':
-                return await this.modifyFile(step.file, step.description, workspaceFolder);
-            
+                return await this.modifyFile(step.file!, step.description, workspaceFolder);
             default:
                 throw new Error(`Unknown action: ${action}`);
         }
@@ -190,21 +155,12 @@ Answer:`;
         const filePath = path.join(workspaceFolder.uri.fsPath, filename);
         const ext = path.extname(filename);
         
-        let codePrompt = `Generate complete, working code for: ${description}
-        File: ${filename}
-        Language: ${this.getLanguageFromExtension(ext)}
-        
-        Return ONLY the code, no explanations or markdown formatting.`;
-
-        const response = await this.callOpenAI(codePrompt);
-        let code = response.trim();
-        
-        // Clean up markdown code blocks if present
-        code = code.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
+        const codePrompt = `Generate complete, working code for: ${description}\nFile: ${filename}\nLanguage: ${this.getLanguageFromExtension(ext)}\n\nReturn ONLY the code, no explanations or markdown formatting.`;
+        const response = await callOpenAI(this.apiKey, this.model, codePrompt);
+        const code = response.trim().replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
         
         fs.writeFileSync(filePath, code, 'utf8');
         
-        // Open the file in editor
         const document = await vscode.workspace.openTextDocument(filePath);
         await vscode.window.showTextDocument(document);
         
@@ -214,8 +170,6 @@ Answer:`;
     private async checkErrors(filename: string, workspaceFolder: vscode.WorkspaceFolder): Promise<string> {
         const filePath = path.join(workspaceFolder.uri.fsPath, filename);
         const uri = vscode.Uri.file(filePath);
-        
-        // Get diagnostics from VS Code
         const diagnostics = vscode.languages.getDiagnostics(uri);
         
         if (diagnostics.length === 0) {
@@ -236,18 +190,9 @@ Answer:`;
         }
 
         const currentContent = fs.readFileSync(filePath, 'utf8');
-        
-        const modifyPrompt = `Modify this code according to: ${description}
-        
-        Current code:
-        ${currentContent}
-        
-        Return ONLY the complete modified code, no explanations or markdown.`;
-
-        const response = await this.callOpenAI(modifyPrompt);
-        let code = response.trim();
-        
-        code = code.replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
+        const modifyPrompt = `Modify this code according to: ${description}\n\nCurrent code:\n${currentContent}\n\nReturn ONLY the complete modified code, no explanations or markdown.`;
+        const response = await callOpenAI(this.apiKey, this.model, modifyPrompt);
+        const code = response.trim().replace(/```[\w]*\n/g, '').replace(/```$/g, '').trim();
         
         fs.writeFileSync(filePath, code, 'utf8');
         
@@ -255,7 +200,7 @@ Answer:`;
     }
 
     private getLanguageFromExtension(ext: string): string {
-        const langMap: { [key: string]: string } = {
+        const langMap: Record<string, string> = {
             '.cpp': 'C++',
             '.c': 'C',
             '.js': 'JavaScript',
@@ -270,21 +215,15 @@ Answer:`;
     }
 
     private extractJsonFromResponse(text: string): any[] {
-        // Try to find JSON array in the response
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);
         }
         
-        // Fallback: try to parse the whole response
         try {
             return JSON.parse(text);
         } catch {
             throw new Error('Could not extract valid JSON from response');
         }
-    }
-
-    getCurrentPlan(): TaskPlan | null {
-        return this.currentPlan;
     }
 }

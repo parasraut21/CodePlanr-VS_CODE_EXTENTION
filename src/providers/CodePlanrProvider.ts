@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export class CodePlanrProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'codePlanrChat';
@@ -23,9 +25,11 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(
             async message => {
+                console.log('Received message:', message);
                 switch (message.type) {
                     case 'sendMessage':
-                        await this._handleSendMessage(message.text);
+                        console.log('Handling sendMessage');
+                        await this._handleSendMessage(message.text, message.agent);
                         break;
                     case 'configureApiKey':
                         await this._handleConfigureApiKey();
@@ -40,13 +44,17 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         );
     }
 
-    private async _handleSendMessage(text: string) {
+    private async _handleSendMessage(text: string, _agent: string = 'general') {
+        console.log('_handleSendMessage called with:', text);
         if (!this._view) {
             console.error('No webview available');
             return;
         }
 
-        // Show typing indicator immediately
+        // Add user message to chat first
+        this._addMessage('user', text);
+
+        // Show typing indicator
         this._showTyping();
 
         try {
@@ -54,28 +62,82 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             const apiKey = await this._getApiKey();
             if (!apiKey) {
                 this._hideTyping();
-                this._addMessage('assistant', '⚠️ OpenAI API key not configured. Please set it up first:\n\n- Set environment variable OPENAI_API_KEY\n- Or run "CodePlanr: Configure OpenAI API Key" command\n- Then reload the window');
+                this._addMessage('assistant', '⚠️ Click the ⚙️ Config button above to set your OpenAI API key first!');
                 return;
             }
 
-            // Call OpenAI API
-            const response = await this._callOpenAI(apiKey, text);
-            this._hideTyping();
-            this._addMessage('assistant', response);
+            // Check if this is a file creation request
+            const isFileRequest = text.toLowerCase().includes('create') || 
+                                 text.toLowerCase().includes('make') || 
+                                 text.toLowerCase().includes('write') ||
+                                 text.toLowerCase().includes('generate');
+
+            if (isFileRequest) {
+                // Use agent mode for file creation
+                await this._handleAgentMode(apiKey, text);
+            } else {
+                // Regular chat mode
+                const response = await this._callOpenAI(apiKey, text);
+                this._hideTyping();
+                this._addMessage('assistant', response);
+            }
 
         } catch (error) {
             this._hideTyping();
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             
             if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
-                this._addMessage('assistant', '🔑 API Key Error: Your OpenAI API key is invalid or missing.\n\nPlease:\n1. Get a valid API key from https://platform.openai.com/api-keys\n2. Set it via "CodePlanr: Configure OpenAI API Key" command\n3. Reload the window');
+                this._addMessage('assistant', '🔑 API Key Error: Click ⚙️ Config button to set a valid API key');
             } else if (errorMessage.includes('429')) {
-                this._addMessage('assistant', '⏰ Rate Limit Error: You have exceeded the API rate limit. Please wait a moment and try again.');
-            } else if (errorMessage.includes('500') || errorMessage.includes('502') || errorMessage.includes('503')) {
-                this._addMessage('assistant', '🌐 Server Error: OpenAI servers are experiencing issues. Please try again in a few minutes.');
+                this._addMessage('assistant', '⏰ Rate limit exceeded. Please wait a moment.');
             } else {
                 this._addMessage('assistant', `❌ Error: ${errorMessage}`);
             }
+        }
+    }
+
+    private async _handleAgentMode(apiKey: string, userRequest: string) {
+        try {
+            this._addMessage('assistant', '🤖 Creating your file...');
+
+            // Check workspace
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (!workspaceRoot) {
+                this._hideTyping();
+                this._addMessage('assistant', '⚠️ Please open a folder first (File → Open Folder)');
+                return;
+            }
+
+            // Ask AI what file to create and what code to write
+            const prompt = `User wants: "${userRequest}"
+
+Respond with JSON only:
+{
+  "file": "filename.ext",
+  "code": "the actual code here"
+}
+
+No markdown, no backticks, just raw JSON. Keep filename simple without paths.`;
+
+            const response = await this._callOpenAI(apiKey, prompt);
+            const cleanResponse = response.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+            const result = JSON.parse(cleanResponse);
+
+            // Create file in workspace root
+            const fullPath = path.join(workspaceRoot, result.file);
+            
+            fs.writeFileSync(fullPath, result.code);
+
+            // Open file
+            const document = await vscode.workspace.openTextDocument(fullPath);
+            await vscode.window.showTextDocument(document);
+
+            this._hideTyping();
+            this._addMessage('assistant', `✅ Created ${result.file}\n\n📝 ${result.code.split('\n').length} lines of code\n\n✨ File opened in editor!`);
+
+        } catch (error) {
+            this._hideTyping();
+            this._addMessage('assistant', `❌ Failed to create file: ${error}`);
         }
     }
 
@@ -127,6 +189,8 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
     }
 
     private async _callOpenAI(apiKey: string, message: string): Promise<string> {
+        const systemPrompt = 'You are CodePlanr AI, a helpful coding assistant. Be concise and practical. Respond in plain text without markdown formatting.';
+
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -136,42 +200,20 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             body: JSON.stringify({
                 model: 'gpt-4o',
                 messages: [
-                    {
-                        role: 'system',
-                        content: 'You are CodePlanr AI, a helpful coding assistant created by Paras Raut. Help users with their coding tasks, provide step-by-step plans, and suggest code implementations. Be concise and practical. Always respond in plain text without markdown formatting, bullet points, or special characters. Just provide clear, readable text. If anyone asks who created you or who made you, tell them Paras Raut created you.'
-                    },
-                    {
-                        role: 'user',
-                        content: message
-                    }
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: message }
                 ],
                 max_tokens: 2000,
-                temperature: 0.7
+                temperature: 0.3
             })
         });
 
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error('OpenAI API error:', response.status, errorText);
-            throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`);
+            throw new Error(`OpenAI API error: ${response.status}`);
         }
 
         const data = await response.json() as any;
-        let content = data.choices[0].message.content;
-        
-        // Clean up the response - remove markdown formatting
-        content = content
-            .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold formatting
-            .replace(/\*(.*?)\*/g, '$1') // Remove italic formatting
-            .replace(/^[\s]*[-*]\s*/gm, '• ') // Convert list items to bullet points
-            .replace(/^[\s]*\d+\.\s*/gm, '') // Remove numbered lists
-            .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-            .replace(/`([^`]+)`/g, '$1') // Remove inline code formatting
-            .replace(/#{1,6}\s*/g, '') // Remove headers
-            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links, keep text
-            .trim();
-            
-        return content;
+        return data.choices[0].message.content.trim();
     }
 
     private _addMessage(type: 'user' | 'assistant', content: string) {
@@ -357,6 +399,23 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         .input-wrapper {
             display: flex;
             gap: 8px;
+            align-items: center;
+        }
+
+        .agent-selector {
+            background: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border: 1px solid var(--vscode-input-border);
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-family: var(--vscode-font-family);
+            font-size: 12px;
+            min-width: 100px;
+        }
+
+        .agent-selector:focus {
+            outline: none;
+            border-color: var(--vscode-focusBorder);
         }
 
         .input-field {
@@ -452,7 +511,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
 
     <div class="input-container">
         <div class="input-wrapper">
-            <input type="text" class="input-field" id="messageInput" placeholder="Ask me anything about coding..." />
+            <input type="text" class="input-field" id="messageInput" placeholder="Ask me anything or say 'create a file'..." />
             <button class="send-btn" id="sendBtn">Send</button>
         </div>
     </div>
@@ -469,37 +528,36 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         const clearBtn = document.getElementById('clearBtn');
         const configBtn = document.getElementById('configBtn');
         const notification = document.getElementById('notification');
+        const agentSelector = document.getElementById('agentSelector');
 
         let isProcessing = false;
 
         function sendMessage() {
             const text = messageInput.value.trim();
-            if (!text || isProcessing) return;
+            
+            if (!text || isProcessing) {
+                return;
+            }
 
-            // Clear input and disable button immediately
             messageInput.value = '';
             sendBtn.disabled = true;
             isProcessing = true;
 
-            // Add user message to chat
-            addMessage('user', text);
-
-            // Send to extension
             vscode.postMessage({
                 type: 'sendMessage',
-                text: text
+                text: text,
+                agent: 'general'
             });
         }
 
         function addMessage(type, content) {
             const messageDiv = document.createElement('div');
-            messageDiv.className = \`message \${type}\`;
+            messageDiv.className = 'message ' + type;
             
             const header = type === 'user' ? '👤 You' : '🤖 CodePlanr AI';
-            messageDiv.innerHTML = \`
-                <div class="message-header">\${header}</div>
-                <div class="message-content">\${content.replace(/\\n/g, '<br>')}</div>
-            \`;
+            messageDiv.innerHTML = 
+                '<div class="message-header">' + header + '</div>' +
+                '<div class="message-content">' + content.replace(/\n/g, '<br>') + '</div>';
 
             chatContainer.appendChild(messageDiv);
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -538,6 +596,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
 
         sendBtn.addEventListener('click', sendMessage);
         clearBtn.addEventListener('click', () => {
+            clearChat();
             vscode.postMessage({ type: 'clearChat' });
         });
         configBtn.addEventListener('click', () => {

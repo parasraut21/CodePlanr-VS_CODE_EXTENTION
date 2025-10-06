@@ -13,14 +13,20 @@
   ],
   "activationEvents": [
     "onView:codePlanrChat",
-    "onCommand:CodePlanr.configureApiKey"
+    "onCommand:CodePlanr.configureApiKey",
+    "onCommand:CodePlanr.agent"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "CodePlanr.configureApiKey",
-        "title": "Configure OpenAI API Key",
+        "title": "⚙️ Configure API Key",
+        "category": "CodePlanr"
+      },
+      {
+        "command": "CodePlanr.agent",
+        "title": "🤖 AI Agent",
         "category": "CodePlanr"
       }
     ],
@@ -29,7 +35,7 @@
         {
           "id": "codePlanr",
           "title": "CodePlanr AI",
-          "icon": "$(code)"
+          "icon": "$(robot)"
         }
       ]
     },
@@ -37,10 +43,8 @@
       "codePlanr": [
         {
           "id": "codePlanrChat",
-          "name": "AI Assistant",
-          "when": "workspaceFolderCount > 0",
-          "type": "webview",
-          "icon": "$(code)"
+          "name": "AI Chat",
+          "type": "webview"
         }
       ]
     },
@@ -77,6 +81,8 @@
     "test": "vscode-test"
   },
   "dependencies": {
+    "@mastra/core": "^0.20.0",
+    "@mastra/memory": "^0.15.5",
     "dotenv": "^17.2.3",
     "fs-extra": "^11.2.0",
     "glob": "^11.0.0",

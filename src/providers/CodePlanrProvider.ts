@@ -774,6 +774,23 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.1);
         }
 
+        .model-selector optgroup {
+            font-weight: 700;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            padding: 4px 0;
+        }
+
+        .model-selector option {
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+        }
+
+        .model-selector option:hover {
+            background: var(--bg-elevated);
+        }
+
         .mode-btn {
             flex: 1;
             padding: 7px 12px;
@@ -1326,13 +1343,25 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                 <button class="mode-btn active" id="agentModeBtn">⚡ Agent</button>
             </div>
             <select class="model-selector" id="modelSelector" title="Select AI Model">
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="gpt-4o-mini">GPT-4o Mini</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                <option value="gpt-4">GPT-4</option>
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                <option value="o1-preview">O1 Preview</option>
-                <option value="o1-mini">O1 Mini</option>
+                <optgroup label="GPT-5 (Preview)">
+                    <option value="gpt-5-preview">GPT-5 Preview</option>
+                    <option value="gpt-5-turbo">GPT-5 Turbo</option>
+                </optgroup>
+                <optgroup label="GPT-4o Series">
+                    <option value="gpt-4o">GPT-4o</option>
+                    <option value="gpt-4o-mini">GPT-4o Mini</option>
+                </optgroup>
+                <optgroup label="GPT-4 Series">
+                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                    <option value="gpt-4">GPT-4</option>
+                </optgroup>
+                <optgroup label="O1 Series">
+                    <option value="o1-preview">O1 Preview</option>
+                    <option value="o1-mini">O1 Mini</option>
+                </optgroup>
+                <optgroup label="GPT-3.5">
+                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                </optgroup>
             </select>
         </div>
         <div id="fileAttachmentContainer"></div>

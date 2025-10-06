@@ -1,10 +1,14 @@
 import * as vscode from 'vscode';
+import { MastraAgentService } from '../services/mastraAgent';
 
 export class CodePlanrProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'codePlanrChat';
     private _view?: vscode.WebviewView;
+    private _agentService: MastraAgentService;
 
-    constructor(private readonly _extensionUri: vscode.Uri) {}
+    constructor(private readonly _extensionUri: vscode.Uri) {
+        this._agentService = new MastraAgentService();
+    }
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -26,6 +30,9 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                 switch (message.type) {
                     case 'sendMessage':
                         await this._handleSendMessage(message.text);
+                        break;
+                    case 'sendAgentTask':
+                        await this._handleAgentTask(message.text);
                         break;
                     case 'configureApiKey':
                         await this._handleConfigureApiKey();
@@ -77,6 +84,67 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                 this._addMessage('assistant', `❌ Error: ${errorMessage}`);
             }
         }
+    }
+
+    private async _handleAgentTask(text: string) {
+        if (!this._view) {
+            console.error('No webview available');
+            return;
+        }
+
+        try {
+            // Get API key
+            const apiKey = await this._getApiKey();
+            if (!apiKey) {
+                this._addMessage('assistant', '⚠️ OpenAI API key not configured. Please configure it first.');
+                return;
+            }
+
+            // Set API key for agent
+            this._agentService.setApiKey(apiKey);
+
+            this._addMessage('assistant', '🤖 Agent Mode: Creating plan...');
+
+            // Create plan
+            const plan = await this._agentService.createPlan(text);
+            
+            // Show plan
+            let planText = `📋 Plan Created:\n\n`;
+            plan.steps.forEach(step => {
+                planText += `${step.id}. [ ] ${step.description}\n`;
+            });
+            this._addMessage('assistant', planText);
+
+            // Execute plan
+            this._addMessage('assistant', '⚡ Executing plan...\n');
+
+            await this._agentService.executePlan(plan, (step) => {
+                let statusIcon = '⏳';
+                if (step.status === 'completed') statusIcon = '✅';
+                if (step.status === 'failed') statusIcon = '❌';
+                
+                const message = `${statusIcon} Step ${step.id}: ${step.description}${step.result ? '\n   ' + step.result : ''}${step.error ? '\n   Error: ' + step.error : ''}`;
+                
+                this._updatePlanProgress(step.id, step.status, message);
+            });
+
+            this._addMessage('assistant', '🎉 All tasks completed successfully!');
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this._addMessage('assistant', `❌ Agent Error: ${errorMessage}`);
+        }
+    }
+
+    private _updatePlanProgress(stepId: number, status: string, message: string) {
+        if (!this._view) return;
+
+        this._view.webview.postMessage({
+            type: 'updateStep',
+            stepId: stepId,
+            status: status,
+            message: message
+        });
     }
 
     private async _handleConfigureApiKey() {
@@ -359,6 +427,36 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             gap: 8px;
         }
 
+        .mode-toggle {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 8px;
+            padding: 4px;
+            background: var(--vscode-input-background);
+            border-radius: 6px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 6px 12px;
+            background: transparent;
+            border: none;
+            border-radius: 4px;
+            color: var(--vscode-foreground);
+            cursor: pointer;
+            font-size: 12px;
+            transition: background-color 0.2s;
+        }
+
+        .mode-btn.active {
+            background: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+        }
+
+        .mode-btn:hover:not(.active) {
+            background: var(--vscode-button-secondaryBackground);
+        }
+
         .input-field {
             flex: 1;
             background: var(--vscode-input-background);
@@ -451,8 +549,12 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
     </div>
 
     <div class="input-container">
+        <div class="mode-toggle">
+            <button class="mode-btn" id="chatModeBtn">💬 Chat</button>
+            <button class="mode-btn active" id="agentModeBtn">🤖 Agent</button>
+        </div>
         <div class="input-wrapper">
-            <input type="text" class="input-field" id="messageInput" placeholder="Ask me anything about coding..." />
+            <input type="text" class="input-field" id="messageInput" placeholder="Tell me what to do (e.g., create a cpp file for addition of 2 numbers)..." />
             <button class="send-btn" id="sendBtn">Send</button>
         </div>
     </div>
@@ -469,8 +571,11 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         const clearBtn = document.getElementById('clearBtn');
         const configBtn = document.getElementById('configBtn');
         const notification = document.getElementById('notification');
+        const chatModeBtn = document.getElementById('chatModeBtn');
+        const agentModeBtn = document.getElementById('agentModeBtn');
 
         let isProcessing = false;
+        let currentMode = 'agent';
 
         function sendMessage() {
             const text = messageInput.value.trim();
@@ -484,11 +589,18 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             // Add user message to chat
             addMessage('user', text);
 
-            // Send to extension
-            vscode.postMessage({
-                type: 'sendMessage',
-                text: text
-            });
+            // Send to extension based on mode
+            if (currentMode === 'agent') {
+                vscode.postMessage({
+                    type: 'sendAgentTask',
+                    text: text
+                });
+            } else {
+                vscode.postMessage({
+                    type: 'sendMessage',
+                    text: text
+                });
+            }
         }
 
         function addMessage(type, content) {
@@ -544,6 +656,20 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             vscode.postMessage({ type: 'configureApiKey' });
         });
 
+        chatModeBtn.addEventListener('click', () => {
+            currentMode = 'chat';
+            chatModeBtn.classList.add('active');
+            agentModeBtn.classList.remove('active');
+            messageInput.placeholder = 'Ask me anything about coding...';
+        });
+
+        agentModeBtn.addEventListener('click', () => {
+            currentMode = 'agent';
+            agentModeBtn.classList.add('active');
+            chatModeBtn.classList.remove('active');
+            messageInput.placeholder = 'Tell me what to do (e.g., create a cpp file for addition of 2 numbers)...';
+        });
+
         // Handle messages from extension
         window.addEventListener('message', event => {
             const message = event.data;
@@ -571,6 +697,10 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                     
                 case 'showNotification':
                     showNotification(message.message);
+                    break;
+
+                case 'updateStep':
+                    addMessage('assistant', message.message);
                     break;
             }
         });

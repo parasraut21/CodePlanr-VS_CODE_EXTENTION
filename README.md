@@ -56,8 +56,8 @@ CodePlanr is an intelligent VS Code extension that uses OpenAI GPT-4o to generat
 
 This extension contributes the following settings:
 
-* `CodePlanr.openaiApiKey`: OpenAI API Key for CodePlanr AI features
-* `CodePlanr.model`: OpenAI model to use for code generation (default: "gpt-4o")
+- `CodePlanr.openaiApiKey`: OpenAI API Key for CodePlanr AI features
+- `CodePlanr.model`: OpenAI model to use for code generation (default: "gpt-4o")
 
 ## How It Works
 
@@ -77,56 +77,6 @@ The extension is built with a modular architecture:
 - **Plan Generator**: Combines workspace analysis with AI planning
 - **Markdown Viewer**: Displays plans in an interactive webview
 - **Code Applier**: Safely applies changes with user confirmation
-
-## Development
-
-### Project Structure
-
-```
-src/
-├── extension.ts              # Main extension entry point
-├── services/
-│   ├── openaiService.ts      # OpenAI API integration
-│   ├── workspaceScanner.ts   # Workspace file analysis
-│   ├── planGenerator.ts      # Plan generation logic
-│   ├── markdownViewer.ts     # Interactive plan display
-│   └── codeApplier.ts        # Code change application
-└── test/
-    └── extension.test.ts     # Extension tests
-```
-
-### Building
-
-```bash
-# Install dependencies
-yarn install
-
-# Compile TypeScript
-yarn compile
-
-# Watch for changes
-yarn watch
-
-# Package for distribution
-yarn package
-```
-
-## Release Notes
-
-### 0.0.1
-
-Initial release of CodePlanr with:
-- AI-powered coding plan generation
-- Workspace analysis and file scanning
-- Interactive plan viewer with clickable elements
-- Code change generation and application
-- OpenAI GPT-4o integration
-
-## Known Issues
-
-- Large workspaces may take longer to scan
-- API rate limits may apply based on your OpenAI plan
-- Some complex codebases may require manual plan refinement
 
 ## Contributing
 

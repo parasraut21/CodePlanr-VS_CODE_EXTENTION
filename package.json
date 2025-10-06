@@ -77,10 +77,12 @@
     "test": "vscode-test"
   },
   "dependencies": {
+    "@mastra/core": "^0.20.0",
     "dotenv": "^17.2.3",
     "fs-extra": "^11.2.0",
     "glob": "^11.0.0",
-    "openai": "^4.67.0"
+    "openai": "^4.67.0",
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",

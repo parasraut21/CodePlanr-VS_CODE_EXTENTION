@@ -9,7 +9,7 @@ export class ConfigService {
     static async getApiKey(): Promise<string | null> {
         const config = vscode.workspace.getConfiguration(this.CONFIG_KEY);
         const apiKey = config.get<string>(this.API_KEY_FIELD);
-        
+
         if (apiKey && apiKey.trim()) {
             return apiKey.trim();
         }

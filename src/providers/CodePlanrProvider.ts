@@ -24,6 +24,16 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+        // Send current model to webview
+        setTimeout(() => {
+            if (this._view) {
+                this._view.webview.postMessage({
+                    type: 'setModel',
+                    model: this._getCurrentModel()
+                });
+            }
+        }, 100);
+
         // Handle messages from the webview
         webviewView.webview.onDidReceiveMessage(
             async message => {
@@ -51,6 +61,9 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                         break;
                     case 'uploadFile':
                         await this._handleFileUpload();
+                        break;
+                    case 'changeModel':
+                        await this._handleModelChange(message.model);
                         break;
                 }
             },
@@ -112,8 +125,9 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                 return;
             }
 
-            // Set API key for agent
+            // Set API key and model for agent
             this._agentService.setApiKey(apiKey);
+            this._agentService.setModel(this._getCurrentModel());
 
             this._addMessage('assistant', '🤖 Agent Mode: Creating plan...');
 
@@ -273,6 +287,23 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async _handleModelChange(model: string) {
+        const config = vscode.workspace.getConfiguration('CodePlanr');
+        await config.update('model', model, vscode.ConfigurationTarget.Global);
+        
+        if (this._view) {
+            this._view.webview.postMessage({
+                type: 'showNotification',
+                message: `✅ Model changed to ${model}`
+            });
+        }
+    }
+
+    private _getCurrentModel(): string {
+        const config = vscode.workspace.getConfiguration('CodePlanr');
+        return config.get<string>('model') || 'gpt-4o';
+    }
+
     private async _getApiKey(): Promise<string | null> {
         // Try VS Code settings first
         const config = vscode.workspace.getConfiguration('CodePlanr');
@@ -291,6 +322,8 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
     }
 
     private async _callOpenAI(apiKey: string, message: string): Promise<string> {
+        const model = this._getCurrentModel();
+        
         const response = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -298,7 +331,7 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'gpt-4o',
+                model: model,
                 messages: [
                     {
                         role: 'system',
@@ -701,14 +734,44 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             box-shadow: var(--shadow-md);
         }
 
+        .input-header {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
         .mode-toggle {
             display: flex;
             gap: 4px;
-            margin-bottom: 10px;
+            flex: 1;
             padding: 3px;
             background: var(--bg-tertiary);
             border-radius: var(--radius-md);
             border: 1px solid var(--border-subtle);
+        }
+
+        .model-selector {
+            padding: 7px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            outline: none;
+        }
+
+        .model-selector:hover {
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+        }
+
+        .model-selector:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.1);
         }
 
         .mode-btn {
@@ -1257,9 +1320,20 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
     </div>
 
     <div class="input-container">
-        <div class="mode-toggle">
-            <button class="mode-btn" id="chatModeBtn">💬 Chat</button>
-            <button class="mode-btn active" id="agentModeBtn">⚡ Agent</button>
+        <div class="input-header">
+            <div class="mode-toggle">
+                <button class="mode-btn" id="chatModeBtn">💬 Chat</button>
+                <button class="mode-btn active" id="agentModeBtn">⚡ Agent</button>
+            </div>
+            <select class="model-selector" id="modelSelector" title="Select AI Model">
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-4">GPT-4</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                <option value="o1-preview">O1 Preview</option>
+                <option value="o1-mini">O1 Mini</option>
+            </select>
         </div>
         <div id="fileAttachmentContainer"></div>
         <div class="input-wrapper">
@@ -1285,12 +1359,14 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
         const notification = document.getElementById('notification');
         const chatModeBtn = document.getElementById('chatModeBtn');
         const agentModeBtn = document.getElementById('agentModeBtn');
+        const modelSelector = document.getElementById('modelSelector');
         const fileAttachmentContainer = document.getElementById('fileAttachmentContainer');
 
         let isProcessing = false;
         let currentMode = 'agent';
         let messageCount = 0;
         let uploadedFile = null;
+        let currentModel = 'gpt-4o';
 
         function sendMessage() {
             const text = messageInput.value.trim();
@@ -1488,6 +1564,15 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
             messageInput.placeholder = 'Describe what you want to create...';
         });
 
+        modelSelector.addEventListener('change', (e) => {
+            const selectedModel = e.target.value;
+            currentModel = selectedModel;
+            vscode.postMessage({ 
+                type: 'changeModel', 
+                model: selectedModel 
+            });
+        });
+
         function showErrorNotification(message) {
             notification.textContent = message;
             notification.className = 'notification error-notification';
@@ -1549,6 +1634,11 @@ export class CodePlanrProvider implements vscode.WebviewViewProvider {
                         content: message.content
                     };
                     showFileAttachment(message.fileName);
+                    break;
+
+                case 'setModel':
+                    currentModel = message.model;
+                    modelSelector.value = message.model;
                     break;
             }
         });

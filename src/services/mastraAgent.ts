@@ -20,11 +20,16 @@ interface TaskPlan {
 export class MastraAgentService {
     private currentPlan: TaskPlan | null = null;
     private apiKey: string = '';
+    private model: string = 'gpt-4o';
 
     constructor() {}
 
     setApiKey(key: string) {
         this.apiKey = key;
+    }
+
+    setModel(model: string) {
+        this.model = model;
     }
 
     async createPlan(userRequest: string): Promise<TaskPlan> {
@@ -89,7 +94,7 @@ Answer:`;
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                model: 'gpt-4o',
+                model: this.model,
                 messages: [
                     {
                         role: 'system',

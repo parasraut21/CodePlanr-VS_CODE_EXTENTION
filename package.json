@@ -3,6 +3,11 @@
   "displayName": "CodePlanr",
   "description": "CodePlanr AI is a VS Code extension that creates AI-powered coding plans. It scans your workspace offline for relevant files, generates a Markdown plan with clickable links, and lets you apply AI-suggested code changes to files with confirmation. Simple, TypeScript-based, and built to streamline coding tasks.",
   "version": "0.0.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ParasRaut/CodePlanr.git"
+  },
   "icon": "resources/codeplanr.png",
   "publisher": "ParasRaut",
   "engines": {
@@ -82,11 +87,15 @@
   },
   "dependencies": {
     "@mastra/core": "^0.20.0",
+<<<<<<< HEAD
     "@mastra/memory": "^0.15.5",
+=======
+>>>>>>> 7f229e66db17080657041b106c7d56905537b054
     "dotenv": "^17.2.3",
     "fs-extra": "^11.2.0",
     "glob": "^11.0.0",
-    "openai": "^4.67.0"
+    "openai": "^4.67.0",
+    "zod": "^4.1.11"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
